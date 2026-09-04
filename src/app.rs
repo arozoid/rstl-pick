@@ -37,7 +37,7 @@ impl PickerItem {
             PickerItem::Network => "nmtui",
             PickerItem::Audio => "wiremix",
             PickerItem::Clipboard => "clipse",
-            PickerItem::Bluetooth => "bluetuith",
+            PickerItem::Bluetooth => "bluetui",
             PickerItem::Icons => "latuicon",
         }
     }

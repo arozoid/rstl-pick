@@ -11,5 +11,5 @@ picks between:
 - `nmtui` — network
 - `wiremix` — audio
 - `clipse` — clipboard
-- `bluetuith` — bluetooth
+- `bluetui` — bluetooth
 - `latuicon` — icons

@@ -28,26 +28,15 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     // A compact, centered panel sized to fit every entry at once (no
     // scrolling): search box + all five one-line items are always visible.
-    let page = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Length(15),
-            Constraint::Percentage(50),
-        ])
-        .split(area);
-
-    let center = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(30),
-            Constraint::Min(40),
-            Constraint::Percentage(30),
-        ])
-        .split(page[1]);
-
-    let panel = center[1];
-    if panel.width < 40 || panel.height < 9 {
+    // Centering uses explicit rect math ((avail - panel)/2 each side), which
+    // is exact and immune to the flex/constraint quirks that mis-center
+    // blocks on different terminal sizes (notably narrow/sub-1000px windows).
+    let panel_w = 46u16.min(area.width.saturating_sub(2));
+    let panel_h = 15u16.min(area.height.saturating_sub(2));
+    let page_x = (area.width - panel_w) / 2;
+    let page_y = (area.height - panel_h) / 2;
+    let panel = Rect::new(page_x, page_y, panel_w, panel_h);
+    if panel.width < 30 || panel.height < 9 {
         render_too_small(frame, area);
         return;
     }
