@@ -26,13 +26,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Page background.
     frame.render_widget(Block::default().style(Style::new().bg(PAGE_BG)), area);
 
-    // A deliberately compact, centered panel: half-page vertical inset, with a
-    // minimum usable width so the search box and one-line entries fit.
+    // A compact, centered panel sized to fit every entry at once (no
+    // scrolling): search box + all five one-line items are always visible.
     let page = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage(50),
-            Constraint::Length(12),
+            Constraint::Length(15),
             Constraint::Percentage(50),
         ])
         .split(area);
