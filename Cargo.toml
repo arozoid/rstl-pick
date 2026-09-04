@@ -1,0 +1,17 @@
+[package]
+name = "rstl-pick"
+version = "0.1.0"
+edition = "2021"
+description = "Compact fuzzy search TUI app picker for the rstl.sway desktop"
+license = "MIT"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.29"
+libc = "0.2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
