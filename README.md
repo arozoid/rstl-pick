@@ -12,4 +12,5 @@ picks between:
 - `wiremix` — audio
 - `clipse` — clipboard
 - `bluetui` — bluetooth
-- `latuicon` — icons
+- `latuicon` — icons (the picked icon is copied to the clipboard via
+  `wl-copy`, falling back to `xclip`/`xsel`)

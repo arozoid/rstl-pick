@@ -62,6 +62,8 @@ pub struct App {
     /// True while the search box is "focused" (i.e. typeable). Kept for future
     /// UI polish; typing always edits the query in this simple picker.
     pub quit: bool,
+    /// Transient footer message (e.g. "icon copied"), cleared on the next key.
+    pub notice: Option<String>,
 }
 
 impl App {
@@ -72,7 +74,18 @@ impl App {
             list,
             query: String::new(),
             quit: false,
+            notice: None,
         }
+    }
+
+    /// Show a transient status message.
+    pub fn flash(&mut self, msg: impl Into<String>) {
+        self.notice = Some(msg.into());
+    }
+
+    /// Hide the transient status message.
+    pub fn clear_notice(&mut self) {
+        self.notice = None;
     }
 
     /// The entries that match the current search query.

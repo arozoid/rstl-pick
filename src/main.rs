@@ -2,12 +2,15 @@ mod app;
 mod events;
 mod ui;
 
-use std::{io, process::Command};
+use std::{
+    io::{self, Read, Write},
+    process::{Command, Stdio},
+};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use app::App;
+use app::{App, PickerItem};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute, terminal,
@@ -104,6 +107,73 @@ fn run_external(terminal: &mut T, command: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Run the icon picker outside the TUI, capture its stdout, and return the
+/// selected icon (None when nothing was picked).
+///
+/// latuicon is built for `VAR=$(latuicon)`: it renders its UI through the
+/// controlling terminal and prints only the picked icon to stdout, so piping
+/// stdout here keeps it fully interactive while we grab the result.
+fn run_icon_picker(terminal: &mut T) -> io::Result<Option<String>> {
+    leave_ui(&mut io::stdout())?;
+    let mut child = unsafe {
+        Command::new("sh")
+            .arg("-c")
+            .arg("latuicon")
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .pre_exec(reset_signals_in_child)
+            .spawn()
+    }?;
+
+    let mut out = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        // Blocks until latuicon closes stdout (i.e. exits).
+        let _ = stdout.read_to_string(&mut out);
+    }
+    let _ = child.wait();
+
+    enter_ui(&mut io::stdout())?;
+    terminal.clear()?;
+
+    let icon = out.trim();
+    if icon.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(icon.to_string()))
+    }
+}
+
+/// Put `text` on the clipboard via the first available tool. Returns Ok(false)
+/// when no clipboard tool is installed.
+fn set_clipboard(text: &str) -> io::Result<bool> {
+    const TOOLS: [(&str, &[&str]); 3] = [
+        ("wl-copy", &[]),
+        ("xclip", &["-selection", "clipboard"]),
+        ("xsel", &["--clipboard", "--input"]),
+    ];
+    for (tool, args) in TOOLS {
+        let mut child = match Command::new(tool)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => continue, // tool not installed
+        };
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        match child.wait() {
+            Ok(status) if status.success() => return Ok(true),
+            _ => continue,
+        }
+    }
+    Ok(false)
+}
+
 fn run(terminal: &mut T) -> io::Result<()> {
     let mut app = App::new();
 
@@ -112,11 +182,26 @@ fn run(terminal: &mut T) -> io::Result<()> {
 
         match events::next_event()? {
             AppEvent::Quit => app.quit = true,
-            AppEvent::NavigatePrev => app.previous(),
-            AppEvent::NavigateNext => app.next(),
-            AppEvent::Type(c) => app.type_char(c),
-            AppEvent::Backspace => app.backspace(),
-            AppEvent::Select => handle_selection(terminal, &app)?,
+            AppEvent::NavigatePrev => {
+                app.clear_notice();
+                app.previous()
+            }
+            AppEvent::NavigateNext => {
+                app.clear_notice();
+                app.next()
+            }
+            AppEvent::Type(c) => {
+                app.clear_notice();
+                app.type_char(c)
+            }
+            AppEvent::Backspace => {
+                app.clear_notice();
+                app.backspace()
+            }
+            AppEvent::Select => {
+                app.clear_notice();
+                handle_selection(terminal, &mut app)?
+            }
             AppEvent::Redraw => {}
         }
     }
@@ -125,9 +210,18 @@ fn run(terminal: &mut T) -> io::Result<()> {
 }
 
 /// Dispatch the chosen entry to its underlying program.
-fn handle_selection(terminal: &mut T, app: &App) -> io::Result<()> {
+fn handle_selection(terminal: &mut T, app: &mut App) -> io::Result<()> {
     if let Some(item) = app.current_selection() {
-        run_external(terminal, item.run())?;
+        match item {
+            // Closed without picking -> nothing to copy.
+            PickerItem::Icons => if let Some(icon) = run_icon_picker(terminal)? {
+                match set_clipboard(&icon) {
+                    Ok(true) => app.flash("icon copied to clipboard"),
+                    _ => app.flash("no clipboard tool found (wl-copy/xclip/xsel)"),
+                }
+            },
+            _ => run_external(terminal, item.run())?,
+        }
     }
     Ok(())
 }

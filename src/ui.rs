@@ -58,15 +58,28 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // search box
-            Constraint::Length(1),  // spacer
+            Constraint::Length(1),  // notice / spacer
             Constraint::Min(1),     // list
         ])
         .split(inner);
 
     render_search(frame, layout[0], &app.query);
+    render_notice(frame, layout[1], app.notice.as_deref());
     render_list(frame, layout[2], app);
 
     render_footer(frame, area);
+}
+
+/// Transient status line (e.g. "icon copied"); a blank spacer when idle.
+fn render_notice(frame: &mut Frame, area: Rect, notice: Option<&str>) {
+    if let Some(msg) = notice {
+        let text = Paragraph::new(Line::from(Span::styled(
+            msg,
+            Style::new().fg(ACCENT),
+        )))
+        .alignment(Alignment::Center);
+        frame.render_widget(text, area);
+    }
 }
 
 /// The search box: a bordered input with the current query and a caret.
