@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, PickerItem};
 
 /// The forest-green accent used throughout the UI (#6aa84f).
 pub const ACCENT: Color = Color::Rgb(106, 168, 79);
@@ -27,12 +27,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Block::default().style(Style::new().bg(PAGE_BG)), area);
 
     // A compact, centered panel sized to fit every entry at once (no
-    // scrolling): search box + all five one-line items are always visible.
+    // scrolling): search box + all six one-line items are always visible.
     // Centering uses explicit rect math ((avail - panel)/2 each side), which
     // is exact and immune to the flex/constraint quirks that mis-center
     // blocks on different terminal sizes (notably narrow/sub-1000px windows).
     let panel_w = 46u16.min(area.width.saturating_sub(2));
-    let panel_h = 15u16.min(area.height.saturating_sub(2));
+    let panel_h = 16u16.min(area.height.saturating_sub(2));
     let page_x = (area.width - panel_w) / 2;
     let page_y = (area.height - panel_h) / 2;
     let panel = Rect::new(page_x, page_y, panel_w, panel_h);
@@ -113,11 +113,16 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let items = visible.iter().map(|it| {
+        let hint = if *it == PickerItem::Files {
+            app.file_manager.unwrap_or("spf / rovr / lf").to_string()
+        } else {
+            it.hint().to_string()
+        };
         ListItem::new(Line::from(vec![
             Span::styled(format!(" {} ", it.key()), Style::new().fg(ACCENT)),
             Span::raw(" "),
             Span::styled(it.label(), Style::new().fg(Color::Rgb(150, 165, 138))),
-            Span::styled(format!("  {}", it.run()), Style::new().fg(DIM)),
+            Span::styled(format!("  {}", hint), Style::new().fg(DIM)),
         ]))
         .style(Style::new().bg(PANEL_BG))
     });
@@ -136,7 +141,7 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_too_small(frame: &mut Frame, area: Rect) {
-    let msg = Paragraph::new("Terminal too small — please enlarge the window.")
+    let msg = Paragraph::new("Terminal too small, please enlarge the window.")
         .style(Style::new().fg(ACCENT))
         .alignment(Alignment::Center);
     frame.render_widget(msg, area);

@@ -8,9 +8,11 @@ launches in-place and the picker returns when it exits.
 
 picks between:
 
-- `nmtui` — network
-- `wiremix` — audio
-- `clipse` — clipboard
-- `bluetui` — bluetooth
-- `latuicon` — icons (the picked icon is copied to the clipboard via
+- `nmtui`: network
+- `wiremix`: audio
+- `clipse`: clipboard
+- `bluetui`: bluetooth
+- `latuicon`: icons (the picked icon is copied to the clipboard via
   `wl-copy`, falling back to `xclip`/`xsel`)
+- `spf` / `rovr` / `lf`: files (runs the first of them that is installed,
+  in that order; `spf` is the superfile binary)

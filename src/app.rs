@@ -1,4 +1,25 @@
+use std::process::Command;
+
 use ratatui::widgets::ListState;
+
+/// File managers the files entry can launch, tried in this order.
+/// spf is the binary shipped by the superfile package.
+const FILE_MANAGERS: [&str; 3] = ["spf", "rovr", "lf"];
+
+/// The first of `tools` found on PATH, or None.
+fn first_on_path<'a>(tools: &'a [&'a str]) -> Option<&'a str> {
+    tools
+        .iter()
+        .find(|tool| {
+            Command::new("sh")
+                .arg("-c")
+                .arg(format!("command -v {} >/dev/null 2>&1", tool))
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
+        .copied()
+}
 
 /// The terminal apps the picker can launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,16 +29,18 @@ pub enum PickerItem {
     Clipboard,
     Bluetooth,
     Icons,
+    Files,
 }
 
 impl PickerItem {
     /// The fixed, ordered list of entries.
-    pub const ALL: [PickerItem; 5] = [
+    pub const ALL: [PickerItem; 6] = [
         PickerItem::Network,
         PickerItem::Audio,
         PickerItem::Clipboard,
         PickerItem::Bluetooth,
         PickerItem::Icons,
+        PickerItem::Files,
     ];
 
     /// Human-readable label for the entry.
@@ -28,6 +51,7 @@ impl PickerItem {
             PickerItem::Clipboard => "clipboard",
             PickerItem::Bluetooth => "bluetooth",
             PickerItem::Icons => "icons",
+            PickerItem::Files => "files",
         }
     }
 
@@ -39,6 +63,21 @@ impl PickerItem {
             PickerItem::Clipboard => "clipse",
             PickerItem::Bluetooth => "bluetui",
             PickerItem::Icons => "latuicon",
+            PickerItem::Files => {
+                "for m in spf rovr lf; do command -v \"$m\" >/dev/null 2>&1 || continue; \"$m\"; break; done"
+            }
+        }
+    }
+
+    /// Short command hint shown next to the label.
+    pub fn hint(self) -> &'static str {
+        match self {
+            PickerItem::Network => "nmtui",
+            PickerItem::Audio => "wiremix",
+            PickerItem::Clipboard => "clipse",
+            PickerItem::Bluetooth => "bluetui",
+            PickerItem::Icons => "latuicon",
+            PickerItem::Files => "spf / rovr / lf",
         }
     }
 
@@ -50,6 +89,7 @@ impl PickerItem {
             PickerItem::Clipboard => 'c',
             PickerItem::Bluetooth => 'b',
             PickerItem::Icons => 'i',
+            PickerItem::Files => 'f',
         }
     }
 }
@@ -64,6 +104,8 @@ pub struct App {
     pub quit: bool,
     /// Transient footer message (e.g. "icon copied"), cleared on the next key.
     pub notice: Option<String>,
+    /// File manager the files entry will run: first of spf/rovr/lf on PATH.
+    pub file_manager: Option<&'static str>,
 }
 
 impl App {
@@ -75,6 +117,7 @@ impl App {
             query: String::new(),
             quit: false,
             notice: None,
+            file_manager: first_on_path(&FILE_MANAGERS),
         }
     }
 
