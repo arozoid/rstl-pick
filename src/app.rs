@@ -30,17 +30,19 @@ pub enum PickerItem {
     Bluetooth,
     Icons,
     Files,
+    Calculator,
 }
 
 impl PickerItem {
     /// The fixed, ordered list of entries.
-    pub const ALL: [PickerItem; 6] = [
+    pub const ALL: [PickerItem; 7] = [
         PickerItem::Network,
         PickerItem::Audio,
         PickerItem::Clipboard,
         PickerItem::Bluetooth,
         PickerItem::Icons,
         PickerItem::Files,
+        PickerItem::Calculator,
     ];
 
     /// Human-readable label for the entry.
@@ -52,6 +54,7 @@ impl PickerItem {
             PickerItem::Bluetooth => "bluetooth",
             PickerItem::Icons => "icons",
             PickerItem::Files => "files",
+            PickerItem::Calculator => "calculator",
         }
     }
 
@@ -66,6 +69,7 @@ impl PickerItem {
             PickerItem::Files => {
                 "for m in spf rovr lf; do command -v \"$m\" >/dev/null 2>&1 || continue; \"$m\"; break; done"
             }
+            PickerItem::Calculator => "eva",
         }
     }
 
@@ -78,6 +82,7 @@ impl PickerItem {
             PickerItem::Bluetooth => "bluetui",
             PickerItem::Icons => "latuicon",
             PickerItem::Files => "spf / rovr / lf",
+            PickerItem::Calculator => "eva",
         }
     }
 
@@ -90,6 +95,7 @@ impl PickerItem {
             PickerItem::Bluetooth => 'b',
             PickerItem::Icons => 'i',
             PickerItem::Files => 'f',
+            PickerItem::Calculator => 'e',
         }
     }
 }

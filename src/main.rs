@@ -202,6 +202,10 @@ fn run(terminal: &mut T) -> io::Result<()> {
                 app.clear_notice();
                 handle_selection(terminal, &mut app)?
             }
+            AppEvent::Shortcut(item) => {
+                app.clear_notice();
+                handle_item(terminal, &mut app, item)?
+            }
             AppEvent::Redraw => {}
         }
     }
@@ -212,16 +216,24 @@ fn run(terminal: &mut T) -> io::Result<()> {
 /// Dispatch the chosen entry to its underlying program.
 fn handle_selection(terminal: &mut T, app: &mut App) -> io::Result<()> {
     if let Some(item) = app.current_selection() {
-        match item {
-            // Closed without picking -> nothing to copy.
-            PickerItem::Icons => if let Some(icon) = run_icon_picker(terminal)? {
+        handle_item(terminal, app, item)?;
+    }
+    Ok(())
+}
+
+/// Run a specific entry (from the highlighted row or a shortcut key).
+fn handle_item(terminal: &mut T, app: &mut App, item: PickerItem) -> io::Result<()> {
+    match item {
+        // Closed without picking -> nothing to copy.
+        PickerItem::Icons => {
+            if let Some(icon) = run_icon_picker(terminal)? {
                 match set_clipboard(&icon) {
                     Ok(true) => app.flash("icon copied to clipboard"),
                     _ => app.flash("no clipboard tool found (wl-copy/xclip/xsel)"),
                 }
-            },
-            _ => run_external(terminal, item.run())?,
+            }
         }
+        _ => run_external(terminal, item.run())?,
     }
     Ok(())
 }

@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
+use crate::app::PickerItem;
+
 /// Events the picker loop cares about.
 #[derive(Debug, Clone, Copy)]
 pub enum AppEvent {
@@ -11,6 +13,7 @@ pub enum AppEvent {
     Type(char),
     Backspace,
     Select,
+    Shortcut(PickerItem),
     Redraw,
 }
 
@@ -47,7 +50,14 @@ fn classify(key: &KeyEvent) -> Option<AppEvent> {
         KeyCode::Down | KeyCode::Tab | KeyCode::Char('j') => Some(AppEvent::NavigateNext),
         KeyCode::Enter => Some(AppEvent::Select),
         KeyCode::Backspace => Some(AppEvent::Backspace),
-        KeyCode::Char(c) => Some(AppEvent::Type(c)),
+        KeyCode::Char(c) => shortcut_for(c)
+            .map(AppEvent::Shortcut)
+            .or_else(|| Some(AppEvent::Type(c))),
         _ => None,
     }
+}
+
+/// The entry whose shortcut key is `c`.
+fn shortcut_for(c: char) -> Option<PickerItem> {
+    PickerItem::ALL.iter().copied().find(|it| it.key() == c)
 }

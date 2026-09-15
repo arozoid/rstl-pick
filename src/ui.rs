@@ -27,12 +27,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Block::default().style(Style::new().bg(PAGE_BG)), area);
 
     // A compact, centered panel sized to fit every entry at once (no
-    // scrolling): search box + all six one-line items are always visible.
+    // scrolling): search box + all seven one-line items are always visible.
     // Centering uses explicit rect math ((avail - panel)/2 each side), which
     // is exact and immune to the flex/constraint quirks that mis-center
     // blocks on different terminal sizes (notably narrow/sub-1000px windows).
     let panel_w = 46u16.min(area.width.saturating_sub(2));
-    let panel_h = 16u16.min(area.height.saturating_sub(2));
+    let panel_h = 17u16.min(area.height.saturating_sub(2));
     let page_x = (area.width - panel_w) / 2;
     let page_y = (area.height - panel_h) / 2;
     let panel = Rect::new(page_x, page_y, panel_w, panel_h);
@@ -57,9 +57,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // search box
-            Constraint::Length(1),  // notice / spacer
-            Constraint::Min(1),     // list
+            Constraint::Length(3), // search box
+            Constraint::Length(1), // notice / spacer
+            Constraint::Min(1),    // list
         ])
         .split(inner);
 
@@ -73,11 +73,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 /// Transient status line (e.g. "icon copied"); a blank spacer when idle.
 fn render_notice(frame: &mut Frame, area: Rect, notice: Option<&str>) {
     if let Some(msg) = notice {
-        let text = Paragraph::new(Line::from(Span::styled(
-            msg,
-            Style::new().fg(ACCENT),
-        )))
-        .alignment(Alignment::Center);
+        let text = Paragraph::new(Line::from(Span::styled(msg, Style::new().fg(ACCENT))))
+            .alignment(Alignment::Center);
         frame.render_widget(text, area);
     }
 }
@@ -103,11 +100,8 @@ fn render_search(frame: &mut Frame, area: Rect, query: &str) {
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let visible = app.visible();
     if visible.is_empty() {
-        let empty = Paragraph::new(Line::from(Span::styled(
-            "no match",
-            Style::new().fg(DIM),
-        )))
-        .alignment(Alignment::Center);
+        let empty = Paragraph::new(Line::from(Span::styled("no match", Style::new().fg(DIM))))
+            .alignment(Alignment::Center);
         frame.render_widget(empty, area);
         return;
     }
@@ -151,8 +145,8 @@ fn render_too_small(frame: &mut Frame, area: Rect) {
 fn render_footer(frame: &mut Frame, area: Rect) {
     let footer = Paragraph::new(
         Line::from(vec![
-            Span::styled("type", Style::new().fg(ACCENT)),
-            Span::raw(" filter   "),
+            Span::styled("keys", Style::new().fg(ACCENT)),
+            Span::raw(" launch   "),
             Span::styled("↑↓", Style::new().fg(ACCENT)),
             Span::raw(" move   "),
             Span::styled("enter", Style::new().fg(ACCENT)),
