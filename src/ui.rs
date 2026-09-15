@@ -16,8 +16,6 @@ const DIM: Color = Color::Rgb(140, 148, 132);
 const PANEL_BG: Color = Color::Rgb(24, 26, 22);
 /// Page background (near-black with a green tint).
 const PAGE_BG: Color = Color::Rgb(16, 18, 15);
-/// The search-box caret colour.
-const CARET: Color = Color::Rgb(206, 216, 194);
 
 /// Handle terminal resizing and redraw a single frame.
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -79,12 +77,12 @@ fn render_notice(frame: &mut Frame, area: Rect, notice: Option<&str>) {
     }
 }
 
-/// The search box: a bordered input with the current query and a caret.
+/// The search box: a bordered input with the current query and the terminal's
+/// bar cursor at the end of the text (only while there is something to edit).
 fn render_search(frame: &mut Frame, area: Rect, query: &str) {
     let input = Paragraph::new(Line::from(vec![
         Span::styled("  ", Style::new().fg(ACCENT)),
         Span::raw(query),
-        Span::styled("▌", Style::new().fg(CARET)),
     ]))
     .block(
         Block::bordered()
@@ -94,6 +92,14 @@ fn render_search(frame: &mut Frame, area: Rect, query: &str) {
             .title_style(Style::new().fg(DIM)),
     );
     frame.render_widget(input, area);
+
+    // Position the real cursor right after the typed text so it reads as the
+    // caret. An empty query leaves the cursor hidden.
+    if !query.is_empty() {
+        let cursor_x =
+            area.x + 1 /* border */ + 2 /* spacing */ + Line::from(Span::raw(query)).width() as u16;
+        frame.set_cursor_position((cursor_x, area.y + 1));
+    }
 }
 
 /// The filtered entry list.

@@ -12,6 +12,7 @@ use std::os::unix::process::CommandExt;
 
 use app::{App, PickerItem};
 use crossterm::{
+    cursor::{SetCursorStyle, Show},
     event::{DisableMouseCapture, EnableMouseCapture},
     execute, terminal,
 };
@@ -73,13 +74,27 @@ fn reset_signals_in_child() -> io::Result<()> {
 /// Enter the alternate screen and raw mode.
 fn enter_ui(stdout: &mut io::Stdout) -> io::Result<()> {
     terminal::enable_raw_mode()?;
-    execute!(stdout, terminal::EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        terminal::EnterAlternateScreen,
+        EnableMouseCapture,
+        // A thin bar cursor in the search box (ratatui shows it whenever the
+        // frame sets a cursor position).
+        SetCursorStyle::BlinkingBar
+    )?;
     Ok(())
 }
 
 /// Leave the alternate screen and raw mode so a real program can take over.
 fn leave_ui(stdout: &mut io::Stdout) -> io::Result<()> {
-    execute!(stdout, terminal::LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        stdout,
+        terminal::LeaveAlternateScreen,
+        DisableMouseCapture,
+        // Restore the terminal's normal cursor shape after the TUI.
+        SetCursorStyle::DefaultUserShape,
+        Show
+    )?;
     terminal::disable_raw_mode()?;
     Ok(())
 }
