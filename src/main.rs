@@ -218,8 +218,10 @@ fn run(terminal: &mut T) -> io::Result<()> {
                 handle_selection(terminal, &mut app)?
             }
             AppEvent::Shortcut(item) => {
-                app.clear_notice();
-                handle_item(terminal, &mut app, item)?
+                if app.is_installed(item) {
+                    app.clear_notice();
+                    handle_item(terminal, &mut app, item)?
+                }
             }
             AppEvent::Redraw => {}
         }

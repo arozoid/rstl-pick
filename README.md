@@ -6,7 +6,8 @@ compact fuzzy-search TUI picker for launching the terminal apps of the
 type to filter, arrows / `j`/`k` to move, `enter` to run. the chosen app
 launches in-place and the picker returns when it exits. pressing the letter
 shown next to an entry (e.g. `n` for network, `e` for calculator) launches
-that entry directly.
+that entry directly. entries whose program is not installed on the system are
+hidden from the list, and their key does nothing.
 
 picks between:
 

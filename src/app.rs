@@ -6,19 +6,24 @@ use ratatui::widgets::ListState;
 /// spf is the binary shipped by the superfile package.
 const FILE_MANAGERS: [&str; 3] = ["spf", "rovr", "lf"];
 
+/// Whether `tool` is present on PATH.
+fn on_path(tool: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {tool} >/dev/null 2>&1"))
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Whether any of `tools` is present on PATH.
+fn any_on_path(tools: &[&str]) -> bool {
+    tools.iter().any(|tool| on_path(tool))
+}
+
 /// The first of `tools` found on PATH, or None.
 fn first_on_path<'a>(tools: &'a [&'a str]) -> Option<&'a str> {
-    tools
-        .iter()
-        .find(|tool| {
-            Command::new("sh")
-                .arg("-c")
-                .arg(format!("command -v {} >/dev/null 2>&1", tool))
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
-        })
-        .copied()
+    tools.iter().copied().find(|tool| on_path(tool))
 }
 
 /// The terminal apps the picker can launch.
@@ -98,6 +103,20 @@ impl PickerItem {
             PickerItem::Calculator => 'e',
         }
     }
+
+    /// The binaries this entry needs to be usable (the files entry only needs
+    /// any one of its file managers).
+    pub fn binaries(self) -> &'static [&'static str] {
+        match self {
+            PickerItem::Network => &["nmtui"],
+            PickerItem::Audio => &["wiremix"],
+            PickerItem::Clipboard => &["clipse"],
+            PickerItem::Bluetooth => &["bluetui"],
+            PickerItem::Icons => &["latuicon"],
+            PickerItem::Files => &FILE_MANAGERS,
+            PickerItem::Calculator => &["eva"],
+        }
+    }
 }
 
 /// Top-level application state.
@@ -112,10 +131,21 @@ pub struct App {
     pub notice: Option<String>,
     /// File manager the files entry will run: first of spf/rovr/lf on PATH.
     pub file_manager: Option<&'static str>,
+    /// Entries whose underlying program is installed; the rest are hidden.
+    installed: Vec<PickerItem>,
 }
 
 impl App {
     pub fn new() -> Self {
+        let file_manager = first_on_path(&FILE_MANAGERS);
+        let installed = PickerItem::ALL
+            .iter()
+            .copied()
+            .filter(|it| match it {
+                PickerItem::Files => file_manager.is_some(),
+                other => any_on_path(other.binaries()),
+            })
+            .collect();
         let mut list = ListState::default();
         list.select(Some(0));
         Self {
@@ -123,8 +153,14 @@ impl App {
             query: String::new(),
             quit: false,
             notice: None,
-            file_manager: first_on_path(&FILE_MANAGERS),
+            file_manager,
+            installed,
         }
+    }
+
+    /// Whether the program behind `it` exists on this system.
+    pub fn is_installed(&self, it: PickerItem) -> bool {
+        self.installed.contains(&it)
     }
 
     /// Show a transient status message.
@@ -137,12 +173,13 @@ impl App {
         self.notice = None;
     }
 
-    /// The entries that match the current search query.
+    /// The entries that match the current search query and are installed.
     pub fn visible(&self) -> Vec<PickerItem> {
         let q = self.query.trim().to_lowercase();
         PickerItem::ALL
             .iter()
             .copied()
+            .filter(|it| self.installed.contains(it))
             .filter(|it| q.is_empty() || it.label().contains(&q))
             .collect()
     }
