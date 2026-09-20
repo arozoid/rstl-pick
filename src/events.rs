@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::app::PickerItem;
-
 /// Events the picker loop cares about.
 #[derive(Debug, Clone, Copy)]
 pub enum AppEvent {
@@ -13,12 +11,16 @@ pub enum AppEvent {
     Type(char),
     Backspace,
     Select,
-    Shortcut(PickerItem),
+    /// A key bound to a menu entry was pressed.
+    Shortcut(char),
     Redraw,
 }
 
 /// Block forever until a relevant event arrives, then classify it.
-pub fn next_event() -> std::io::Result<AppEvent> {
+///
+/// `shortcuts` are the keys bound by the menu; pressing one launches its entry
+/// instead of adding to the search query.
+pub fn next_event(shortcuts: &[char]) -> std::io::Result<AppEvent> {
     loop {
         // A short poll keeps the loop responsive to terminal resizes.
         if event::poll(Duration::from_millis(100))? {
@@ -26,7 +28,7 @@ pub fn next_event() -> std::io::Result<AppEvent> {
                 Event::Resize(_, _) => return Ok(AppEvent::Redraw),
                 // Ignore key release/repeat to avoid double-triggering.
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if let Some(ev) = classify(&key) {
+                    if let Some(ev) = classify(&key, shortcuts) {
                         return Ok(ev);
                     }
                 }
@@ -36,7 +38,7 @@ pub fn next_event() -> std::io::Result<AppEvent> {
     }
 }
 
-fn classify(key: &KeyEvent) -> Option<AppEvent> {
+fn classify(key: &KeyEvent, shortcuts: &[char]) -> Option<AppEvent> {
     // Ctrl+C / Ctrl+\ / Ctrl+Z are ignored entirely (raw mode already disables
     // ISIG; this is belt and braces so no control chord can quit by accident).
     // Any other Ctrl chord is ignored too, so Ctrl+A etc. never pollute.
@@ -50,14 +52,8 @@ fn classify(key: &KeyEvent) -> Option<AppEvent> {
         KeyCode::Down | KeyCode::Tab | KeyCode::Char('j') => Some(AppEvent::NavigateNext),
         KeyCode::Enter => Some(AppEvent::Select),
         KeyCode::Backspace => Some(AppEvent::Backspace),
-        KeyCode::Char(c) => shortcut_for(c)
-            .map(AppEvent::Shortcut)
-            .or_else(|| Some(AppEvent::Type(c))),
+        KeyCode::Char(c) if shortcuts.contains(&c) => Some(AppEvent::Shortcut(c)),
+        KeyCode::Char(c) => Some(AppEvent::Type(c)),
         _ => None,
     }
-}
-
-/// The entry whose shortcut key is `c`.
-fn shortcut_for(c: char) -> Option<PickerItem> {
-    PickerItem::ALL.iter().copied().find(|it| it.key() == c)
 }

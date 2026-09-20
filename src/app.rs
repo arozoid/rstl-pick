@@ -1,123 +1,6 @@
-use std::process::Command;
-
 use ratatui::widgets::ListState;
 
-/// File managers the files entry can launch, tried in this order.
-/// spf is the binary shipped by the superfile package.
-const FILE_MANAGERS: [&str; 3] = ["spf", "rovr", "lf"];
-
-/// Whether `tool` is present on PATH.
-fn on_path(tool: &str) -> bool {
-    Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {tool} >/dev/null 2>&1"))
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-/// Whether any of `tools` is present on PATH.
-fn any_on_path(tools: &[&str]) -> bool {
-    tools.iter().any(|tool| on_path(tool))
-}
-
-/// The first of `tools` found on PATH, or None.
-fn first_on_path<'a>(tools: &'a [&'a str]) -> Option<&'a str> {
-    tools.iter().copied().find(|tool| on_path(tool))
-}
-
-/// The terminal apps the picker can launch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PickerItem {
-    Network,
-    Audio,
-    Clipboard,
-    Bluetooth,
-    Icons,
-    Files,
-    Calculator,
-}
-
-impl PickerItem {
-    /// The fixed, ordered list of entries.
-    pub const ALL: [PickerItem; 7] = [
-        PickerItem::Network,
-        PickerItem::Audio,
-        PickerItem::Clipboard,
-        PickerItem::Bluetooth,
-        PickerItem::Icons,
-        PickerItem::Files,
-        PickerItem::Calculator,
-    ];
-
-    /// Human-readable label for the entry.
-    pub fn label(self) -> &'static str {
-        match self {
-            PickerItem::Network => "network",
-            PickerItem::Audio => "audio",
-            PickerItem::Clipboard => "clipboard",
-            PickerItem::Bluetooth => "bluetooth",
-            PickerItem::Icons => "icons",
-            PickerItem::Files => "files",
-            PickerItem::Calculator => "calculator",
-        }
-    }
-
-    /// The command it launches in the user's terminal.
-    pub fn run(self) -> &'static str {
-        match self {
-            PickerItem::Network => "nmtui",
-            PickerItem::Audio => "wiremix",
-            PickerItem::Clipboard => "clipse",
-            PickerItem::Bluetooth => "bluetui",
-            PickerItem::Icons => "latuicon",
-            PickerItem::Files => {
-                "for m in spf rovr lf; do command -v \"$m\" >/dev/null 2>&1 || continue; \"$m\"; break; done"
-            }
-            PickerItem::Calculator => "eva",
-        }
-    }
-
-    /// Short command hint shown next to the label.
-    pub fn hint(self) -> &'static str {
-        match self {
-            PickerItem::Network => "nmtui",
-            PickerItem::Audio => "wiremix",
-            PickerItem::Clipboard => "clipse",
-            PickerItem::Bluetooth => "bluetui",
-            PickerItem::Icons => "latuicon",
-            PickerItem::Files => "spf / rovr / lf",
-            PickerItem::Calculator => "eva",
-        }
-    }
-
-    /// Shortcut key, shown on the same line as the label.
-    pub fn key(self) -> char {
-        match self {
-            PickerItem::Network => 'n',
-            PickerItem::Audio => 'a',
-            PickerItem::Clipboard => 'c',
-            PickerItem::Bluetooth => 'b',
-            PickerItem::Icons => 'i',
-            PickerItem::Files => 'f',
-            PickerItem::Calculator => 'e',
-        }
-    }
-
-    /// The binaries this entry needs to be usable (the files entry only needs
-    /// any one of its file managers).
-    pub fn binaries(self) -> &'static [&'static str] {
-        match self {
-            PickerItem::Network => &["nmtui"],
-            PickerItem::Audio => &["wiremix"],
-            PickerItem::Clipboard => &["clipse"],
-            PickerItem::Bluetooth => &["bluetui"],
-            PickerItem::Icons => &["latuicon"],
-            PickerItem::Files => &FILE_MANAGERS,
-            PickerItem::Calculator => &["eva"],
-        }
-    }
-}
+use crate::config::MenuEntry;
 
 /// Top-level application state.
 pub struct App {
@@ -129,23 +12,15 @@ pub struct App {
     pub quit: bool,
     /// Transient footer message (e.g. "icon copied"), cleared on the next key.
     pub notice: Option<String>,
-    /// File manager the files entry will run: first of spf/rovr/lf on PATH.
-    pub file_manager: Option<&'static str>,
-    /// Entries whose underlying program is installed; the rest are hidden.
-    installed: Vec<PickerItem>,
+    /// Every row of the configured menu, in config order.
+    pub entries: Vec<MenuEntry>,
+    /// Whether each entry's tools are installed (parallel to `entries`).
+    available: Vec<bool>,
 }
 
 impl App {
-    pub fn new() -> Self {
-        let file_manager = first_on_path(&FILE_MANAGERS);
-        let installed = PickerItem::ALL
-            .iter()
-            .copied()
-            .filter(|it| match it {
-                PickerItem::Files => file_manager.is_some(),
-                other => any_on_path(other.binaries()),
-            })
-            .collect();
+    pub fn new(entries: Vec<MenuEntry>) -> Self {
+        let available = entries.iter().map(|e| e.available()).collect();
         let mut list = ListState::default();
         list.select(Some(0));
         Self {
@@ -153,14 +28,9 @@ impl App {
             query: String::new(),
             quit: false,
             notice: None,
-            file_manager,
-            installed,
+            entries,
+            available,
         }
-    }
-
-    /// Whether the program behind `it` exists on this system.
-    pub fn is_installed(&self, it: PickerItem) -> bool {
-        self.installed.contains(&it)
     }
 
     /// Show a transient status message.
@@ -173,22 +43,32 @@ impl App {
         self.notice = None;
     }
 
-    /// The entries that match the current search query and are installed.
-    pub fn visible(&self) -> Vec<PickerItem> {
+    /// The rows that match the current search query and are installed.
+    pub fn visible(&self) -> Vec<MenuEntry> {
         let q = self.query.trim().to_lowercase();
-        PickerItem::ALL
+        self.entries
             .iter()
-            .copied()
-            .filter(|it| self.installed.contains(it))
-            .filter(|it| q.is_empty() || it.label().contains(&q))
+            .zip(&self.available)
+            .filter(|(_, avail)| **avail)
+            .filter(|(entry, _)| q.is_empty() || entry.label.to_lowercase().contains(&q))
+            .map(|(entry, _)| entry.clone())
             .collect()
     }
 
     /// The currently highlighted entry (if the filtered list is non-empty).
-    pub fn current_selection(&self) -> Option<PickerItem> {
+    pub fn current_selection(&self) -> Option<MenuEntry> {
         let visible = self.visible();
         let idx = self.list.selected().unwrap_or(0);
-        visible.get(idx).copied()
+        visible.get(idx).cloned()
+    }
+
+    /// The installed row bound to `key`, if any.
+    pub fn entry_by_key(&self, key: char) -> Option<MenuEntry> {
+        self.entries
+            .iter()
+            .zip(&self.available)
+            .find(|(entry, avail)| **avail && entry.key == key)
+            .map(|(entry, _)| entry.clone())
     }
 
     /// Append a character to the search query and reselect the first hit.
@@ -243,6 +123,6 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
-        Self::new()
+        Self::new(Vec::new())
     }
 }

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, PickerItem};
+use crate::app::App;
 
 /// The forest-green accent used throughout the UI (#6aa84f).
 pub const ACCENT: Color = Color::Rgb(106, 168, 79);
@@ -104,28 +104,29 @@ fn render_search(frame: &mut Frame, area: Rect, query: &str) {
 
 /// The filtered entry list.
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
-    let visible = app.visible();
-    if visible.is_empty() {
+    let items: Vec<ListItem> = app
+        .visible()
+        .iter()
+        .map(|entry| {
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {} ", entry.key), Style::new().fg(ACCENT)),
+                Span::raw(" "),
+                Span::styled(
+                    entry.label.clone(),
+                    Style::new().fg(Color::Rgb(150, 165, 138)),
+                ),
+                Span::styled(format!("  {}", entry.hint), Style::new().fg(DIM)),
+            ]))
+            .style(Style::new().bg(PANEL_BG))
+        })
+        .collect();
+
+    if items.is_empty() {
         let empty = Paragraph::new(Line::from(Span::styled("no match", Style::new().fg(DIM))))
             .alignment(Alignment::Center);
         frame.render_widget(empty, area);
         return;
     }
-
-    let items = visible.iter().map(|it| {
-        let hint = if *it == PickerItem::Files {
-            app.file_manager.unwrap_or("spf / rovr / lf").to_string()
-        } else {
-            it.hint().to_string()
-        };
-        ListItem::new(Line::from(vec![
-            Span::styled(format!(" {} ", it.key()), Style::new().fg(ACCENT)),
-            Span::raw(" "),
-            Span::styled(it.label(), Style::new().fg(Color::Rgb(150, 165, 138))),
-            Span::styled(format!("  {}", hint), Style::new().fg(DIM)),
-        ]))
-        .style(Style::new().bg(PANEL_BG))
-    });
 
     let list = List::new(items)
         .highlight_style(
