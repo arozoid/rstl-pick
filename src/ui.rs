@@ -24,13 +24,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Page background.
     frame.render_widget(Block::default().style(Style::new().bg(PAGE_BG)), area);
 
-    // A compact, centered panel sized to fit every entry at once (no
-    // scrolling): search box + all seven one-line items are always visible.
-    // Centering uses explicit rect math ((avail - panel)/2 each side), which
-    // is exact and immune to the flex/constraint quirks that mis-center
-    // blocks on different terminal sizes (notably narrow/sub-1000px windows).
+    // A compact, centered panel sized for the configured number of visible
+    // rows (`display`; extra matches scroll inside the list). Centering uses
+    // explicit rect math ((avail - panel)/2 each side), which is exact and
+    // immune to the flex/constraint quirks that mis-center blocks on
+    // different terminal sizes (notably narrow/sub-1000px windows).
     let panel_w = 46u16.min(area.width.saturating_sub(2));
-    let panel_h = 17u16.min(area.height.saturating_sub(2));
+    // search box (3) + notice (1) + margins (2) + block padding (2)
+    let panel_h = (app.display as u16 + 8).min(area.height.saturating_sub(2));
     let page_x = (area.width - panel_w) / 2;
     let page_y = (area.height - panel_h) / 2;
     let panel = Rect::new(page_x, page_y, panel_w, panel_h);

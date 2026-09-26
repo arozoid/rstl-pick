@@ -30,6 +30,14 @@ each `[[entries]]` block is one row. the defaults (written on first run):
 - `spf` / `rovr` / `lf`: files (runs the first of them that is installed,
   in that order; `spf` is the superfile binary)
 - `eva`: calculator
+- `kew`: music
+- `chroncal`: calendar
+
+top-level option (before the `[[entries]]` blocks):
+
+| field     | meaning |
+|-----------|---------|
+| `display` | how many rows the picker shows at once before the list scrolls (default 9) |
 
 fields, per entry:
 

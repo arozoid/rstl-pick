@@ -16,10 +16,12 @@ pub struct App {
     pub entries: Vec<MenuEntry>,
     /// Whether each entry's tools are installed (parallel to `entries`).
     available: Vec<bool>,
+    /// How many rows the picker shows at once before the list scrolls.
+    pub display: usize,
 }
 
 impl App {
-    pub fn new(entries: Vec<MenuEntry>) -> Self {
+    pub fn new(entries: Vec<MenuEntry>, display: usize) -> Self {
         let available = entries.iter().map(|e| e.available()).collect();
         let mut list = ListState::default();
         list.select(Some(0));
@@ -30,6 +32,7 @@ impl App {
             notice: None,
             entries,
             available,
+            display,
         }
     }
 
@@ -123,6 +126,6 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
-        Self::new(Vec::new())
+        Self::new(Vec::new(), 9)
     }
 }

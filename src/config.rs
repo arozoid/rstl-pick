@@ -36,6 +36,9 @@ impl MenuEntry {
 /// Raw shape of the config file, as deserialized straight from TOML.
 #[derive(Debug, Deserialize)]
 struct ConfigFile {
+    /// How many rows the picker shows at once before the list scrolls.
+    #[serde(default = "default_display")]
+    display: usize,
     entries: Vec<EntryToml>,
 }
 
@@ -53,12 +56,30 @@ struct EntryToml {
     needs: Vec<String>,
 }
 
+/// A parsed menu: the entries plus the picker's presentation settings.
+pub struct Menu {
+    pub entries: Vec<MenuEntry>,
+    /// How many rows the picker shows at once before the list scrolls.
+    pub display: usize,
+}
+
+/// Default for `display` when the config does not set it. Keeps the
+/// historical panel: search box + notice + 9 list rows.
+fn default_display() -> usize {
+    9
+}
+
 /// Parse and validate the config text into menu entries.
-pub fn parse(source: &str) -> Result<Vec<MenuEntry>, String> {
+pub fn parse(source: &str) -> Result<Menu, String> {
     let file: ConfigFile = toml::from_str(source).map_err(|e| format!("bad config: {e}"))?;
 
     if file.entries.is_empty() {
         return Err("config has no entries".into());
+    }
+
+    let display = file.display;
+    if display == 0 {
+        return Err("display must be at least 1".into());
     }
 
     let mut seen = HashSet::new();
@@ -126,12 +147,13 @@ pub fn parse(source: &str) -> Result<Vec<MenuEntry>, String> {
             needs,
         });
     }
-    Ok(entries)
+    Ok(Menu { entries, display })
 }
 
 /// The default menu, written out when no config file exists yet.
 pub fn default_toml() -> &'static str {
     r#"# rstl-pick menu configuration.
+#   display  how many rows the picker shows at once before it scrolls (default 9)
 # Each [[entries]] block is one row in the picker:
 #   label   shown in the list
 #   key     one character; press it in the picker to launch this entry
@@ -139,6 +161,8 @@ pub fn default_toml() -> &'static str {
 #   hint    short text next to the label (optional, defaults to the command)
 #   mode    "normal" runs the command, "clipboard" copies its stdout instead
 #   needs   optional list of programs; the row hides unless one is installed
+
+display = 9
 
 [[entries]]
 label = "network"
@@ -183,6 +207,18 @@ label = "calculator"
 command = "eva"
 key = "e"
 needs = ["eva"]
+
+[[entries]]
+label = "music"
+command = "kew"
+key = "m"
+needs = ["kew"]
+
+[[entries]]
+label = "calendar"
+command = "chroncal"
+key = "d"
+needs = ["chroncal"]
 "#
 }
 
@@ -223,7 +259,7 @@ pub fn config_path(arg: Option<String>) -> PathBuf {
 }
 
 /// Missing config path: write the default menu there, then return its entries.
-pub fn ensure_default(path: &Path) -> Result<Vec<MenuEntry>, String> {
+pub fn ensure_default(path: &Path) -> Result<Menu, String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
@@ -249,11 +285,26 @@ mod tests {
 
     #[test]
     fn parses_default_config() {
-        let entries = parse(default_toml()).unwrap();
-        assert_eq!(entries.len(), 7);
+        let menu = parse(default_toml()).unwrap();
+        assert_eq!(menu.display, 9);
+        let entries = &menu.entries;
+        assert_eq!(entries.len(), 9);
         assert_eq!(entries[0].key, 'n');
         assert_eq!(entries[5].label, "files");
         assert!(!entries[5].available() || entries[5].needs.is_some());
+    }
+
+    #[test]
+    fn parses_custom_display() {
+        let src = default_toml().replacen("display = 9", "display = 4", 1);
+        let menu = parse(&src).unwrap();
+        assert_eq!(menu.display, 4);
+    }
+
+    #[test]
+    fn rejects_zero_display() {
+        let src = default_toml().replacen("display = 9", "display = 0", 1);
+        assert!(parse(&src).is_err());
     }
 
     #[test]
@@ -282,7 +333,7 @@ label = "test"
 command = "echo hi"
 key = "t"
 "#;
-        let entries = parse(src).unwrap();
-        assert_eq!(entries[0].hint, "echo hi");
+        let menu = parse(src).unwrap();
+        assert_eq!(menu.entries[0].hint, "echo hi");
     }
 }

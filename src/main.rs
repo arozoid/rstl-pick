@@ -12,7 +12,7 @@ use std::{
 use std::os::unix::process::CommandExt;
 
 use app::App;
-use config::MenuEntry;
+use config::Menu;
 use crossterm::{
     cursor::{SetCursorStyle, Show},
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -33,12 +33,12 @@ fn main() -> io::Result<()> {
         }
     };
     let path = config::config_path(config_arg);
-    let entries = if path.exists() {
+    let menu = if path.exists() {
         let source = std::fs::read_to_string(&path).map_err(|e| {
             io::Error::new(e.kind(), format!("cannot read {}: {e}", path.display()))
         })?;
         match config::parse(&source) {
-            Ok(entries) => entries,
+            Ok(menu) => menu,
             Err(msg) => {
                 eprintln!("rstl-pick: {msg}");
                 std::process::exit(2);
@@ -46,9 +46,9 @@ fn main() -> io::Result<()> {
         }
     } else {
         match config::ensure_default(&path) {
-            Ok(entries) => {
+            Ok(menu) => {
                 eprintln!("rstl-pick: wrote default config to {}", path.display());
-                entries
+                menu
             }
             Err(msg) => {
                 eprintln!("rstl-pick: {msg}");
@@ -61,7 +61,7 @@ fn main() -> io::Result<()> {
     enter_ui(&mut stdout)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
 
-    let result = run(&mut terminal, entries);
+    let result = run(&mut terminal, menu);
 
     // Always restore the terminal, even on error.
     leave_ui(&mut io::stdout())?;
@@ -223,8 +223,8 @@ fn set_clipboard(text: &str) -> io::Result<bool> {
     Ok(false)
 }
 
-fn run(terminal: &mut T, entries: Vec<MenuEntry>) -> io::Result<()> {
-    let mut app = App::new(entries);
+fn run(terminal: &mut T, menu: Menu) -> io::Result<()> {
+    let mut app = App::new(menu.entries, menu.display);
     let shortcuts: Vec<char> = app.entries.iter().map(|e| e.key).collect();
 
     while !app.quit {
