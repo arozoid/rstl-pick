@@ -210,9 +210,10 @@ needs = ["eva"]
 
 [[entries]]
 label = "music"
-command = "kew"
+command = "for m in kew climp; do command -v \"$m\" >/dev/null 2>&1 || continue; \"$m\"; break; done"
 key = "m"
-needs = ["kew"]
+hint = "kew / climp"
+needs = ["kew", "climp"]
 
 [[entries]]
 label = "calendar"
