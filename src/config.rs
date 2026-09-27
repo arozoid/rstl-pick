@@ -165,6 +165,13 @@ pub fn default_toml() -> &'static str {
 display = 9
 
 [[entries]]
+label = "rstl"
+command = "rstl"
+key = "r"
+hint = "run a script"
+needs = ["rstl"]
+
+[[entries]]
 label = "network"
 command = "nmtui"
 key = "n"
@@ -289,10 +296,14 @@ mod tests {
         let menu = parse(default_toml()).unwrap();
         assert_eq!(menu.display, 9);
         let entries = &menu.entries;
-        assert_eq!(entries.len(), 9);
-        assert_eq!(entries[0].key, 'n');
-        assert_eq!(entries[5].label, "files");
-        assert!(!entries[5].available() || entries[5].needs.is_some());
+        assert_eq!(entries.len(), 10);
+        // the rstl row comes first, so it is on screen without scrolling
+        assert_eq!(entries[0].key, 'r');
+        assert_eq!(entries[0].label, "rstl");
+        assert_eq!(entries[0].command, "rstl");
+        assert_eq!(entries[1].key, 'n');
+        assert_eq!(entries[6].label, "files");
+        assert!(!entries[6].available() || entries[6].needs.is_some());
     }
 
     #[test]
