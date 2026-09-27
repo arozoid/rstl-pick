@@ -30,8 +30,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // immune to the flex/constraint quirks that mis-center blocks on
     // different terminal sizes (notably narrow/sub-1000px windows).
     let panel_w = 46u16.min(area.width.saturating_sub(2));
-    // search box (3) + notice (1) + margins (2) + block padding (2)
-    let panel_h = (app.display as u16 + 8).min(area.height.saturating_sub(2));
+    // search box (3) + notice (1) + margins (2) + block border (2) + block
+    // padding (2); without the border rows the list area comes out two rows
+    // short of `display` and the last entries are scrolled out of view.
+    let panel_h = (app.display as u16 + 10).min(area.height.saturating_sub(2));
     let page_x = (area.width - panel_w) / 2;
     let page_y = (area.height - panel_h) / 2;
     let panel = Rect::new(page_x, page_y, panel_w, panel_h);
