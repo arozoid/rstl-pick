@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, List, ListItem, Padding, Paragraph},
+    widgets::{Block, BorderType, List, ListItem, ListState, Padding, Paragraph},
     Frame,
 };
 
@@ -105,12 +105,28 @@ fn render_search(frame: &mut Frame, area: Rect, query: &str) {
     }
 }
 
-/// The filtered entry list.
+/// The entry list: one row per display slot, blank where the entry is not
+/// installed (see [`App::window`]).
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
-    let items: Vec<ListItem> = app
-        .visible()
+    let window = app.window();
+    // Nothing to launch in view: either the query matched no row, or every row
+    // it matched belongs to a program that is not installed. Both are dead
+    // ends, so say so rather than leaving a blank panel.
+    if !window.iter().any(Option::is_some) {
+        let empty = Paragraph::new(Line::from(Span::styled("no match", Style::new().fg(DIM))))
+            .alignment(Alignment::Center);
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = window
         .iter()
-        .map(|entry| {
+        .map(|slot| {
+            let Some(entry) = slot else {
+                // A missing program keeps its row empty: the space is not
+                // backfilled with the next entry of the menu.
+                return ListItem::new(Line::from("")).style(Style::new().bg(PANEL_BG));
+            };
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", entry.key), Style::new().fg(ACCENT)),
                 Span::raw(" "),
@@ -124,13 +140,6 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
-    if items.is_empty() {
-        let empty = Paragraph::new(Line::from(Span::styled("no match", Style::new().fg(DIM))))
-            .alignment(Alignment::Center);
-        frame.render_widget(empty, area);
-        return;
-    }
-
     let list = List::new(items)
         .highlight_style(
             Style::new()
@@ -141,7 +150,12 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
         .highlight_symbol("▶ ")
         .highlight_spacing(ratatui::widgets::HighlightSpacing::WhenSelected);
 
-    frame.render_stateful_widget(list, area, &mut app.list);
+    // A local state (instead of one owned by App) keeps the highlight a pure
+    // function of the current window: the list never scrolls itself, the app
+    // scrolls the window and reports where the highlight sits inside it.
+    let mut state = ListState::default().with_offset(0);
+    state.select(app.highlight());
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn render_too_small(frame: &mut Frame, area: Rect) {
@@ -171,4 +185,139 @@ fn render_footer(frame: &mut Frame, area: Rect) {
         footer,
         Rect::new(0, area.height.saturating_sub(1), area.width, 1),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{app::App, config::MenuEntry};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    const MISSING: &str = "rstl-pick-test-missing";
+    const PRESENT: &str = "sh";
+
+    fn entry(label: &str, installed: bool) -> MenuEntry {
+        MenuEntry {
+            label: label.to_string(),
+            key: 'a',
+            command: "true".to_string(),
+            hint: String::new(),
+            clip_stdout: false,
+            needs: Some(vec![if installed { PRESENT } else { MISSING }.to_string()]),
+        }
+    }
+
+    /// Render once and return the terminal contents as text, row by row.
+    fn render(app: &mut App, w: u16, h: u16) -> Vec<String> {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| draw(f, app)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// The entry labels drawn in the list panel, in order. Blank rows (no
+    /// label) are skipped, so the length is the number of *visible* rows.
+    fn drawn_labels(rows: &[String]) -> Vec<String> {
+        rows.iter()
+            .filter_map(|r| {
+                r.split_whitespace()
+                    .find(|w| {
+                        w.len() == 3
+                            && w.starts_with('e')
+                            && w[1..].chars().all(|c| c.is_ascii_digit())
+                    })
+                    .map(|w| w.to_string())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn missing_programs_leave_blank_rows() {
+        // 11 entries, display 9, e03/e05/e07 not installed. The drawn panel
+        // must show e01 e02 _ e04 _ e06 _ e08 e09 -- and must NOT pull e10/e11
+        // up into the freed rows.
+        let entries = (1..=11)
+            .map(|i| entry(&format!("e{i:02}"), !matches!(i, 3 | 5 | 7)))
+            .collect();
+        let mut app = App::new(entries, 9);
+        let rows = render(&mut app, 60, 24);
+
+        let labels = drawn_labels(&rows);
+        assert_eq!(
+            labels,
+            vec!["e01", "e02", "e04", "e06", "e08", "e09"],
+            "blank rows should not shift later entries up"
+        );
+        // The panel still reserves all nine rows: three of them are blank.
+        let list_rows = rows
+            .iter()
+            .filter(|r| r.trim_start().starts_with('│') && r.contains('│'))
+            .count();
+        assert!(
+            list_rows >= 9,
+            "expected 9 reserved list rows, found {list_rows}"
+        );
+    }
+
+    #[test]
+    fn all_installed_fills_every_row() {
+        let entries = (1..=9).map(|i| entry(&format!("e{i:02}"), true)).collect();
+        let mut app = App::new(entries, 9);
+        let rows = render(&mut app, 60, 24);
+        let labels = drawn_labels(&rows);
+        assert_eq!(labels.len(), 9, "expected 9 filled rows, got {labels:?}");
+    }
+
+    #[test]
+    fn highlight_moves_past_blank_rows() {
+        let entries = (1..=11)
+            .map(|i| entry(&format!("e{i:02}"), !matches!(i, 3 | 5 | 7)))
+            .collect();
+        let mut app = App::new(entries, 9);
+        let first = render(&mut app, 60, 24);
+        assert!(
+            first.iter().any(|r| r.contains('▶')),
+            "the first row should be highlighted on start"
+        );
+        // Two steps: e01 -> e02 -> e04 (e03 is uninstalled).
+        app.next();
+        app.next();
+        let after = render(&mut app, 60, 24);
+        let highlighted = after
+            .iter()
+            .find(|r| r.contains('▶'))
+            .expect("a row should be highlighted");
+        assert!(
+            highlighted.contains("e04"),
+            "expected e04 highlighted, got {highlighted:?}"
+        );
+    }
+
+    #[test]
+    fn no_match_still_renders() {
+        let entries = (1..=5).map(|i| entry(&format!("e{i:02}"), true)).collect();
+        let mut app = App::new(entries, 9);
+        app.type_char('z');
+        let rows = render(&mut app, 60, 24);
+        assert!(rows.iter().any(|r| r.contains("no match")));
+    }
+
+    #[test]
+    fn all_entries_missing_says_no_match() {
+        // Nothing is installed: there is no row to show, so the panel reports
+        // it instead of looking frozen.
+        let entries = (1..=4).map(|i| entry(&format!("e{i:02}"), false)).collect();
+        let mut app = App::new(entries, 9);
+        let rows = render(&mut app, 60, 24);
+        assert!(rows.iter().any(|r| r.contains("no match")), "{rows:?}");
+        assert!(!rows.iter().any(|r| r.contains("e0")));
+    }
 }
