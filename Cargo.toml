@@ -1,6 +1,6 @@
 [package]
 name = "rstl-pick"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2021"
 description = "Compact fuzzy search TUI app picker for the rstl.sway desktop"
 license = "MIT"
