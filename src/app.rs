@@ -49,39 +49,33 @@ impl App {
         self.notice = None;
     }
 
-    /// Indices into `entries` of the rows matching the current search query,
-    /// in config order.
+    /// Indices into `entries` of the rows to show, in config order: the ones
+    /// matching the current search query **and** whose program is installed.
     ///
-    /// Availability is deliberately NOT applied here: the `display` budget is
-    /// spent on these rows, so a row whose tools are not installed still
-    /// consumes a display row (it is drawn blank) instead of the row being
-    /// backfilled from further down the menu.
+    /// Availability is part of the match, not a rendering decision. A row
+    /// whose tools are missing is not a blank line, it is simply not a row:
+    /// it leaves no gap, its key does nothing, and the entry below it moves up
+    /// instead of being pushed off the bottom of the panel.
     fn matched(&self) -> Vec<usize> {
         let q = self.query.trim().to_lowercase();
         self.entries
             .iter()
             .enumerate()
             .filter(|(_, entry)| q.is_empty() || entry.label.to_lowercase().contains(&q))
+            .filter(|(i, _)| self.available[*i])
             .map(|(i, _)| i)
             .collect()
     }
 
-    /// The rows currently on screen: up to `display` matched rows starting at
-    /// the scroll offset. `None` marks a row whose entry is not installed --
-    /// the slot stays blank rather than being filled with the next entry.
-    pub fn window(&self) -> Vec<Option<MenuEntry>> {
+    /// The rows currently on screen: up to `display` of [`App::matched`],
+    /// starting at the scroll offset. Never contains a gap.
+    pub fn window(&self) -> Vec<MenuEntry> {
         let matched = self.matched();
         let start = self.offset.min(matched.len());
         matched[start..]
             .iter()
             .take(self.display)
-            .map(|&i| {
-                if self.available[i] {
-                    Some(self.entries[i].clone())
-                } else {
-                    None
-                }
-            })
+            .map(|&i| self.entries[i].clone())
             .collect()
     }
 
@@ -92,10 +86,10 @@ impl App {
         (self.offset <= sel && sel < self.offset + self.display).then_some(sel - self.offset)
     }
 
-    /// The currently highlighted entry (if the filtered list is non-empty).
+    /// The currently highlighted entry (if any row is visible).
     pub fn current_selection(&self) -> Option<MenuEntry> {
         let i = *self.matched().get(self.selected?)?;
-        self.available[i].then(|| self.entries[i].clone())
+        Some(self.entries[i].clone())
     }
 
     /// The installed row bound to `key`, if any.
@@ -121,19 +115,14 @@ impl App {
         self.jump_top();
     }
 
-    /// Reset the selection to the first installed matching row, scrolled top.
+    /// Reset the selection to the first visible row, scrolled top.
     fn jump_top(&mut self) {
         self.offset = 0;
-        self.selected = self.first_installed();
+        self.selected = if self.matched().is_empty() { None } else { Some(0) };
     }
 
-    /// Index of the first matched row whose entry is installed.
-    fn first_installed(&self) -> Option<usize> {
-        self.matched().iter().position(|&i| self.available[i])
-    }
-
-    /// Move the selection by `dir` matched rows, skipping rows whose entry is
-    /// not installed, and scroll the window to keep it on screen.
+    /// Move the selection by `dir` visible rows, wrapping around, and scroll
+    /// the window to keep it on screen.
     fn step(&mut self, dir: isize) {
         let matched = self.matched();
         let n = matched.len() as isize;
@@ -147,17 +136,9 @@ impl App {
         let from = self
             .selected
             .map_or_else(|| if dir > 0 { 0 } else { n - 1 }, |i| i as isize);
-        // Walk at most n rows: the first installed row found is the target
-        // (wrapping), or nothing is installed anywhere in the menu.
-        for step in 1..=n {
-            let i = (from + dir * step).rem_euclid(n) as usize;
-            if self.available[matched[i]] {
-                self.selected = Some(i);
-                self.scroll_into_view(i);
-                return;
-            }
-        }
-        self.selected = None;
+        let i = (from + dir).rem_euclid(n) as usize;
+        self.selected = Some(i);
+        self.scroll_into_view(i);
     }
 
     /// Scroll the window the minimum amount needed to show matched row `i`.
@@ -217,33 +198,31 @@ mod tests {
         App::new(entries, display)
     }
 
-    /// The labels currently in the window, with `None` for a blank row.
-    fn window_labels(app: &App) -> Vec<Option<String>> {
-        app.window()
-            .iter()
-            .map(|slot| slot.as_ref().map(|e| e.label.clone()))
-            .collect()
+    /// The labels currently in the window, in order.
+    fn window_labels(app: &App) -> Vec<String> {
+        app.window().iter().map(|e| e.label.clone()).collect()
     }
 
     #[test]
-    fn missing_row_is_blank_and_not_backfilled() {
-        // display 9 of 11, three not installed: their rows stay empty and the
-        // two rows below the budget (e10, e11) are NOT pulled up to fill them.
+    fn a_missing_row_takes_no_space() {
+        // display 9 of 11, e03/e05/e07 not installed: they are not drawn, so
+        // the rows below them move up and the window is filled with the eight
+        // entries that are really there.
         let app = app(11, 9, &[3, 5, 7]);
         assert_eq!(
             window_labels(&app),
-            vec![
-                Some("e01".into()),
-                Some("e02".into()),
-                None,
-                Some("e04".into()),
-                None,
-                Some("e06".into()),
-                None,
-                Some("e08".into()),
-                Some("e09".into()),
-            ]
+            vec!["e01", "e02", "e04", "e06", "e08", "e09", "e10", "e11"]
         );
+    }
+
+    #[test]
+    fn missing_rows_at_the_top_do_not_push_the_first_row_down() {
+        // The case that started this: a missing entry above the others used to
+        // leave a hole and push everything down by one.
+        let app = app(5, 9, &[1, 2]);
+        assert_eq!(window_labels(&app), vec!["e03", "e04", "e05"]);
+        assert_eq!(app.highlight(), Some(0));
+        assert_eq!(app.current_selection().unwrap().label, "e03");
     }
 
     #[test]
@@ -252,7 +231,7 @@ mod tests {
         assert_eq!(
             window_labels(&app),
             (1..=9)
-                .map(|i| Some(format!("e{i:02}")))
+                .map(|i| format!("e{i:02}"))
                 .collect::<Vec<_>>()
         );
     }
@@ -278,25 +257,25 @@ mod tests {
         assert_eq!(window_labels(&app).len(), 4);
     }
 
-    /// The window must always be exactly the matched rows in
-    /// `[offset, offset + display)`, with a blank wherever the entry is not
-    /// installed. This is the invariant the whole feature rests on, so it is
-    /// checked after every kind of state change rather than per scenario.
+    /// The window must always be exactly the matched slice
+    /// `[offset, offset + display)`, with nothing blank in it. This is the
+    /// invariant the whole feature rests on, so it is checked after every kind
+    /// of state change rather than per scenario.
     fn assert_window_is_the_slice(app: &App) {
         let labels = window_labels(app);
-        let matched: Vec<Option<String>> = app
+        let expected: Vec<String> = app
             .matched()
             .iter()
             .skip(app.offset)
             .take(app.display)
-            .map(|&i| app.available[i].then(|| app.entries[i].label.clone()))
+            .map(|&i| app.entries[i].label.clone())
             .collect();
-        assert_eq!(labels, matched, "window drifted from the matched slice");
+        assert_eq!(labels, expected, "window drifted from the matched slice");
         assert!(labels.len() <= app.display, "window exceeds the budget");
     }
 
     #[test]
-    fn highlight_skips_blank_rows() {
+    fn highlight_skips_missing_rows() {
         let mut app = app(11, 9, &[3, 5, 7]);
         // Starts on e01 (window row 0).
         assert_eq!(app.highlight(), Some(0));
@@ -304,15 +283,15 @@ mod tests {
         app.next();
         assert_eq!(app.current_selection().unwrap().label, "e02");
         assert_eq!(app.highlight(), Some(1));
-        // e03 is not installed: the highlight jumps its blank row to e04.
+        // e03 is not installed: the highlight goes to e04, the very next row.
         app.next();
         assert_eq!(app.current_selection().unwrap().label, "e04");
-        assert_eq!(app.highlight(), Some(3));
+        assert_eq!(app.highlight(), Some(2));
         assert_window_is_the_slice(&app);
     }
 
     #[test]
-    fn scrolling_moves_the_window_and_keeps_gaps() {
+    fn scrolling_moves_the_window_over_a_gap() {
         let mut app = app(20, 9, &[11, 13]);
         for _ in 0..9 {
             app.next();
@@ -321,23 +300,19 @@ mod tests {
         // e10 is the last row of the scrolled window (e02..e10).
         assert_eq!(app.current_selection().unwrap().label, "e10");
         assert_eq!(app.highlight(), Some(8));
-        // Stepping again skips the uninstalled e11 and e13 without ever
-        // backfilling their slots from further down the menu.
+        // Stepping again skips the uninstalled e11 and e13 without leaving a
+        // hole: e12 and e14 take the rows the missing ones would have had.
         app.next();
         assert_eq!(app.current_selection().unwrap().label, "e12");
+        assert_eq!(app.highlight(), Some(8));
         assert_window_is_the_slice(&app);
         app.next();
         assert_eq!(app.current_selection().unwrap().label, "e14");
-        let labels = window_labels(&app);
-        assert!(
-            labels.contains(&None),
-            "e13's row should still be blank somewhere in the window: {labels:?}"
-        );
         assert_window_is_the_slice(&app);
     }
 
     #[test]
-    fn navigation_wraps_and_skips_every_blank() {
+    fn navigation_wraps_and_skips_every_missing_row() {
         let mut app = app(11, 9, &[3, 5, 7]);
         let order: Vec<String> = (0..8)
             .map(|_| {
@@ -361,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn query_resets_the_window_and_keeps_blank_slots() {
+    fn query_resets_the_window_without_leaving_holes() {
         let mut app = app(20, 9, &[2, 3]);
         for _ in 0..12 {
             app.next();
@@ -369,21 +344,11 @@ mod tests {
         assert!(app.offset > 0, "expected the list to have scrolled");
         app.type_char('e');
         app.type_char('0');
-        // "e0" matches e01..e09; e02 and e03 are uninstalled, so their rows
-        // are blank instead of pulling e04..e09 up by two.
+        // "e0" matches e01..e09; e02 and e03 are uninstalled, so the window is
+        // the seven entries that are really there, with no blank rows.
         assert_eq!(
             window_labels(&app),
-            vec![
-                Some("e01".into()),
-                None,
-                None,
-                Some("e04".into()),
-                Some("e05".into()),
-                Some("e06".into()),
-                Some("e07".into()),
-                Some("e08".into()),
-                Some("e09".into()),
-            ]
+            vec!["e01", "e04", "e05", "e06", "e07", "e08", "e09"]
         );
         assert_eq!(app.highlight(), Some(0));
         assert_window_is_the_slice(&app);
@@ -415,6 +380,6 @@ mod tests {
         let app = app(4, 9, &[1, 2, 3, 4]);
         assert_eq!(app.highlight(), None);
         assert_eq!(app.current_selection(), None);
-        assert_eq!(app.window().len(), 4);
+        assert_eq!(app.window().len(), 0);
     }
 }

@@ -105,14 +105,15 @@ fn render_search(frame: &mut Frame, area: Rect, query: &str) {
     }
 }
 
-/// The entry list: one row per display slot, blank where the entry is not
-/// installed (see [`App::window`]).
+/// The entry list: one row per visible entry, in order, with no gaps. An entry
+/// whose program is not installed is not a row at all (see [`App::matched`]),
+/// so the rows below it move up into the space.
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let window = app.window();
-    // Nothing to launch in view: either the query matched no row, or every row
-    // it matched belongs to a program that is not installed. Both are dead
+    // Nothing to launch in view: either the query matched no entry, or every
+    // entry it matched belongs to a program that is not installed. Both are dead
     // ends, so say so rather than leaving a blank panel.
-    if !window.iter().any(Option::is_some) {
+    if window.is_empty() {
         let empty = Paragraph::new(Line::from(Span::styled("no match", Style::new().fg(DIM))))
             .alignment(Alignment::Center);
         frame.render_widget(empty, area);
@@ -121,12 +122,7 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let items: Vec<ListItem> = window
         .iter()
-        .map(|slot| {
-            let Some(entry) = slot else {
-                // A missing program keeps its row empty: the space is not
-                // backfilled with the next entry of the menu.
-                return ListItem::new(Line::from("")).style(Style::new().bg(PANEL_BG));
-            };
+        .map(|entry| {
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", entry.key), Style::new().fg(ACCENT)),
                 Span::raw(" "),
@@ -239,11 +235,19 @@ mod tests {
             .collect()
     }
 
+    /// The row the first drawn label sits on, so a test can measure the gap
+    /// between the search box and the top of the list.
+    fn first_label_row(rows: &[String], labels: &[String]) -> usize {
+        rows.iter()
+            .position(|r| r.contains(&labels[0]))
+            .expect("the first label is drawn somewhere")
+    }
+
     #[test]
-    fn missing_programs_leave_blank_rows() {
+    fn missing_programs_take_no_space() {
         // 11 entries, display 9, e03/e05/e07 not installed. The drawn panel
-        // must show e01 e02 _ e04 _ e06 _ e08 e09 -- and must NOT pull e10/e11
-        // up into the freed rows.
+        // must show e01 e02 e04 e06 e08 e09 e10 e11 -- the entries below a
+        // missing one move up into its row instead of leaving a hole.
         let entries = (1..=11)
             .map(|i| entry(&format!("e{i:02}"), !matches!(i, 3 | 5 | 7)))
             .collect();
@@ -253,17 +257,38 @@ mod tests {
         let labels = drawn_labels(&rows);
         assert_eq!(
             labels,
-            vec!["e01", "e02", "e04", "e06", "e08", "e09"],
-            "blank rows should not shift later entries up"
+            vec!["e01", "e02", "e04", "e06", "e08", "e09", "e10", "e11"],
+            "rows below a missing program should move up"
         );
-        // The panel still reserves all nine rows: three of them are blank.
-        let list_rows = rows
+        // No blank line between the panel's first list row and the first entry.
+        let search = rows
             .iter()
-            .filter(|r| r.trim_start().starts_with('│') && r.contains('│'))
-            .count();
+            .position(|r| r.contains("search"))
+            .expect("the search box is drawn");
+        let first = first_label_row(&rows, &labels);
         assert!(
-            list_rows >= 9,
-            "expected 9 reserved list rows, found {list_rows}"
+            first - search <= 5,
+            "expected the first entry right under the search box, \
+             search at row {search}, first entry at row {first}"
+        );
+    }
+
+    #[test]
+    fn a_missing_first_entry_leaves_no_gap_at_the_top() {
+        // The rstl row itself when the wrapper is not installed: the list must
+        // start with the next entry, not with a hole.
+        let entries = (1..=4)
+            .map(|i| entry(&format!("e{i:02}"), i != 1))
+            .collect();
+        let mut app = App::new(entries, 9);
+        let rows = render(&mut app, 60, 24);
+        let labels = drawn_labels(&rows);
+        assert_eq!(labels, vec!["e02", "e03", "e04"]);
+        let search = rows.iter().position(|r| r.contains("search")).unwrap();
+        let first = first_label_row(&rows, &labels);
+        assert!(
+            first - search <= 5,
+            "a hole above e02: search at row {search}, e02 at row {first}"
         );
     }
 
@@ -277,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_moves_past_blank_rows() {
+    fn highlight_moves_past_missing_rows() {
         let entries = (1..=11)
             .map(|i| entry(&format!("e{i:02}"), !matches!(i, 3 | 5 | 7)))
             .collect();
@@ -299,6 +324,9 @@ mod tests {
             highlighted.contains("e04"),
             "expected e04 highlighted, got {highlighted:?}"
         );
+        // ... and e04 is the third drawn row: the missing e03 left no row.
+        let labels = drawn_labels(&after);
+        assert_eq!(labels[2], "e04");
     }
 
     #[test]
