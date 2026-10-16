@@ -168,7 +168,7 @@ display = 9
 label = "rstl"
 command = "rstl"
 key = "r"
-hint = "run a script"
+hint = "dotfile ops"
 needs = ["rstl"]
 
 [[entries]]
